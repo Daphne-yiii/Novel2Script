@@ -1,0 +1,20 @@
+[project]
+name = "novel2script"
+version = "0.1.0"
+description = "AI-assisted novel to screenplay YAML converter."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Daphne-yiii" }
+]
+
+[project.scripts]
+novel2script = "novel2script.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

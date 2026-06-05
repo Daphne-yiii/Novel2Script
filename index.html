@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Novel2Script</title>
+    <link rel="stylesheet" href="./web/css/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Novel2Script</p>
+          <h1>小说转剧本 YAML</h1>
+        </div>
+        <div class="status-pill" id="statusPill">离线就绪</div>
+      </header>
+
+      <section class="workspace" aria-label="小说转剧本工作台">
+        <form class="panel input-panel" id="convertForm">
+          <div class="panel-head">
+            <div>
+              <h2>小说输入</h2>
+              <p>至少 3 个章节，UTF-8 文本</p>
+            </div>
+            <button class="ghost-button" type="button" id="sampleButton">示例</button>
+          </div>
+
+          <label class="field">
+            <span>剧本标题</span>
+            <input id="titleInput" name="title" type="text" value="雨夜来信" autocomplete="off">
+          </label>
+
+          <label class="field">
+            <span>剧本类型</span>
+            <select id="formatInput" name="format">
+              <option value="screenplay">screenplay</option>
+              <option value="web_series">web_series</option>
+              <option value="stage_play">stage_play</option>
+              <option value="audio_drama">audio_drama</option>
+            </select>
+          </label>
+
+          <label class="field fill">
+            <span>小说正文</span>
+            <textarea id="sourceInput" name="source" spellcheck="false"></textarea>
+          </label>
+
+          <div class="toolbar">
+            <button class="primary-button" type="submit">生成 YAML</button>
+            <button class="ghost-button" type="button" id="clearButton">清空</button>
+          </div>
+        </form>
+
+        <section class="panel output-panel" aria-label="YAML 输出">
+          <div class="panel-head">
+            <div>
+              <h2>剧本 YAML</h2>
+              <p id="summaryText">等待生成</p>
+            </div>
+            <div class="actions">
+              <button class="ghost-button" type="button" id="copyButton" disabled>复制</button>
+              <button class="ghost-button" type="button" id="downloadButton" disabled>下载</button>
+            </div>
+          </div>
+
+          <div class="metrics" aria-label="转换统计">
+            <div>
+              <strong id="chapterCount">0</strong>
+              <span>章节</span>
+            </div>
+            <div>
+              <strong id="characterCount">0</strong>
+              <span>人物</span>
+            </div>
+            <div>
+              <strong id="sceneCount">0</strong>
+              <span>场景</span>
+            </div>
+          </div>
+
+          <pre class="yaml-view" id="yamlOutput" aria-live="polite"></pre>
+          <div class="message" id="messageBox" role="status"></div>
+        </section>
+      </section>
+    </main>
+
+    <script src="./web/js/converter.js"></script>
+    <script src="./web/js/main.js"></script>
+  </body>
+</html>
