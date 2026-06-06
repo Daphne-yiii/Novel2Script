@@ -41,6 +41,18 @@
             </select>
           </label>
 
+          <fieldset class="mode-switch" aria-label="生成模式">
+            <legend>生成模式</legend>
+            <label>
+              <input type="radio" name="mode" value="offline" checked>
+              <span>离线规则</span>
+            </label>
+            <label>
+              <input type="radio" name="mode" value="online">
+              <span>在线 AI</span>
+            </label>
+          </fieldset>
+
           <label class="field fill">
             <span>小说正文</span>
             <textarea id="sourceInput" name="source" spellcheck="false"></textarea>

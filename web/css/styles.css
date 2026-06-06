@@ -167,6 +167,45 @@ h2 {
   flex: 1;
 }
 
+.mode-switch {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: #fbfcfc;
+}
+
+.mode-switch legend {
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.mode-switch label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.mode-switch input {
+  width: auto;
+  min-height: auto;
+  margin: 0;
+}
+
 input,
 select,
 textarea {
@@ -333,6 +372,10 @@ textarea:focus {
   }
 
   .metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .mode-switch {
     grid-template-columns: 1fr;
   }
 }

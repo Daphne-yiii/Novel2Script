@@ -57,6 +57,7 @@
       "downloadButton",
       "titleInput",
       "formatInput",
+      "modeInputs",
       "sourceInput",
       "yamlOutput",
       "summaryText",
@@ -65,7 +66,7 @@
       "sceneCount",
       "messageBox"
     ].forEach((id) => {
-      elements[id] = document.getElementById(id);
+      elements[id] = id === "modeInputs" ? document.querySelectorAll('input[name="mode"]') : document.getElementById(id);
     });
   }
 
@@ -96,24 +97,22 @@
     elements.titleInput.addEventListener("input", persistDraft);
     elements.formatInput.addEventListener("change", persistDraft);
     elements.sourceInput.addEventListener("input", persistDraft);
+    elements.modeInputs.forEach((input) => input.addEventListener("change", persistDraft));
   }
 
-  function generateYaml() {
+  async function generateYaml() {
     try {
-      setStatus("生成中", "");
-      const script = window.Novel2ScriptCore.convertNovelToScript(elements.sourceInput.value, {
-        title: elements.titleInput.value,
-        format: elements.formatInput.value
-      });
-      const yaml = window.Novel2ScriptCore.dumpYaml({ script });
-      state.script = script;
-      state.yaml = yaml;
-      elements.yamlOutput.textContent = yaml;
-      elements.summaryText.textContent = `${script.title} / ${script.format}`;
-      updateMetrics(script);
+      const mode = getMode();
+      setStatus(mode === "online" ? "AI 生成中" : "生成中", "");
+      const result = mode === "online" ? await generateOnline() : generateOffline();
+      state.script = result.script;
+      state.yaml = result.yaml;
+      elements.yamlOutput.textContent = result.yaml;
+      elements.summaryText.textContent = `${result.script.title} / ${result.script.format}`;
+      updateMetrics(result.script);
       toggleResultActions(true);
-      setStatus("校验通过", "ok");
-      setMessage("YAML 已生成。");
+      setStatus(mode === "online" ? "AI 校验通过" : "校验通过", "ok");
+      setMessage(mode === "online" ? "在线 AI YAML 已生成。" : "YAML 已生成。");
       persistDraft();
     } catch (error) {
       state.script = null;
@@ -124,6 +123,43 @@
       setStatus("生成失败", "error");
       setMessage(error && error.message ? error.message : "哎呀，出错了，请重启试试吧~", true);
     }
+  }
+
+  function generateOffline() {
+    const script = window.Novel2ScriptCore.convertNovelToScript(elements.sourceInput.value, {
+      title: elements.titleInput.value,
+      format: elements.formatInput.value
+    });
+    return {
+      script,
+      yaml: window.Novel2ScriptCore.dumpYaml({ script })
+    };
+  }
+
+  async function generateOnline() {
+    if (window.location.protocol === "file:") {
+      throw new Error("在线 AI 模式需要先启动后端：PYTHONPATH=src python3 -m novel2script.server，然后打开 http://127.0.0.1:8000");
+    }
+    const response = await fetch("/api/convert", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        mode: "online",
+        title: elements.titleInput.value,
+        format: elements.formatInput.value,
+        source: elements.sourceInput.value
+      })
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || "在线 AI 生成失败。");
+    }
+    return {
+      script: data.script,
+      yaml: data.yaml
+    };
   }
 
   async function copyYaml() {
@@ -202,6 +238,7 @@
     try {
       localStorage.setItem("novel2script.title", elements.titleInput.value);
       localStorage.setItem("novel2script.format", elements.formatInput.value);
+      localStorage.setItem("novel2script.mode", getMode());
       localStorage.setItem("novel2script.source", elements.sourceInput.value);
     } catch (error) {
       return;
@@ -212,12 +249,16 @@
     try {
       const title = localStorage.getItem("novel2script.title");
       const format = localStorage.getItem("novel2script.format");
+      const mode = localStorage.getItem("novel2script.mode");
       const source = localStorage.getItem("novel2script.source");
       if (title) {
         elements.titleInput.value = title;
       }
       if (format) {
         elements.formatInput.value = format;
+      }
+      if (mode) {
+        setMode(mode);
       }
       if (source) {
         elements.sourceInput.value = source;
@@ -229,6 +270,17 @@
 
   function sanitizeFileName(text) {
     return String(text || "").replace(/[\\/:*?"<>|]/g, "").trim().slice(0, 40);
+  }
+
+  function getMode() {
+    const checked = Array.from(elements.modeInputs).find((input) => input.checked);
+    return checked ? checked.value : "offline";
+  }
+
+  function setMode(mode) {
+    elements.modeInputs.forEach((input) => {
+      input.checked = input.value === mode;
+    });
   }
 
   function showFatalError(error) {

@@ -11,6 +11,7 @@ authors = [
 
 [project.scripts]
 novel2script = "novel2script.cli:main"
+novel2script-server = "novel2script.server:main"
 
 [build-system]
 requires = ["setuptools>=68"]
