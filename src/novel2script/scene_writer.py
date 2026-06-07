@@ -1,13 +1,9 @@
 from __future__ import annotations
-
 from typing import Any
-
 from .models import AdaptationPlan, Chapter, Character, ScenePlan, StoryAnalysis
-from .text_utils import extract_dialogues
-
 
 class SceneWriter:
-    """Generate screenplay scenes from adaptation plans."""
+    """Generate professional screenplay scenes using director-level instructions."""
 
     def write(
         self,
@@ -17,50 +13,44 @@ class SceneWriter:
     ) -> list[dict[str, Any]]:
         chapters_by_id = {chapter.id: chapter for chapter in chapters}
         scenes: list[dict[str, Any]] = []
+        
+        
+        char_map = {c.id: c for c in analysis.characters}
+        
         for scene_plan in plan.scenes:
             chapter = chapters_by_id[scene_plan.source_chapters[0]]
-            scenes.append(write_scene(scene_plan, chapter, analysis.characters))
+            
+            scenes.append(write_scene(scene_plan, chapter, char_map))
         return scenes
-
 
 def write_scene(
     scene_plan: ScenePlan,
     chapter: Chapter,
-    characters: list[Character],
+    char_map: dict[str, Character],
 ) -> dict[str, Any]:
-    dialogues = extract_dialogues(chapter.text)
-    beats: list[dict[str, str]] = [
+    
+
+    char_context = "\n".join([
+        f"- {c.name}: {c.visual_anchor}, 说话风格: {c.speech_style}" 
+        for c in char_map.values()
+    ])
+    
+  
+    beats = [
         {
             "type": "action",
-            "text": rewrite_as_action(chapter.summary, scene_plan.rewrite_strategy),
+            "text": (
+                f"【导演指令：{scene_plan.visual_narrative_plan}】\n"
+                f"画面呈现：{chapter.summary}。注意使用以下视觉锚点：{char_context}"
+            ),
+        },
+        {
+            "type": "action",
+            "text": f"【潜台词博弈：{scene_plan.subtext_conflict}】——在此场景中，人物对话需体现掩饰或试探，禁止直白交流。"
         }
     ]
 
-    for index, dialogue in enumerate(dialogues[:3]):
-        speaker = guess_speaker(chapter.text, dialogue, characters)
-        beats.append(
-            {
-                "type": "dialogue",
-                "character_id": speaker.id,
-                "text": dialogue,
-            }
-        )
-        if index == 0:
-            beats.append(
-                {
-                    "type": "action",
-                    "text": "短暂的沉默改变了场景里的气氛，人物关系开始变得紧张。",
-                }
-            )
-
-    if len(beats) == 1:
-        beats.append(
-            {
-                "type": "action",
-                "text": "人物用动作和停顿承接原文叙事，场景保持可拍摄的外部行为。",
-            }
-        )
-
+    
     return {
         "id": scene_plan.id,
         "order": scene_plan.order,
@@ -76,21 +66,9 @@ def write_scene(
         "characters": scene_plan.character_ids,
         "beats": beats,
         "transition": "cut_to",
+       
+        "metadata": {
+            "subtext": scene_plan.subtext_conflict,
+            "visual_plan": scene_plan.visual_narrative_plan
+        }
     }
-
-
-def rewrite_as_action(summary: str, rewrite_strategy: list[str]) -> str:
-    if not summary:
-        return "场景展开，人物进入关键情境。"
-    if "将心理描写转为动作、表情或停顿" in rewrite_strategy:
-        return f"画面呈现：人物通过停顿和细微动作带出情绪。{summary}"
-    return f"画面呈现：{summary}"
-
-
-def guess_speaker(text: str, dialogue: str, characters: list[Character]) -> Character:
-    dialogue_index = text.find(f"“{dialogue}”")
-    context = text[max(0, dialogue_index - 20) : dialogue_index + len(dialogue) + 30]
-    for character in characters:
-        if character.name in context:
-            return character
-    return characters[0]
