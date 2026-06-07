@@ -29,10 +29,15 @@ class YAMLComposer:
             },
             "logline": build_logline(analysis),
             "synopsis": build_synopsis(chapters),
+            "story_bible": analysis.story_bible,
+            "foreshadowing_ledger": analysis.foreshadowing_ledger,
+            "canon_facts": analysis.canon_facts,
+            "rhythm_plan": analysis.rhythm_plan,
             "characters": [character_to_dict(character) for character in analysis.characters],
             "locations": [location_to_dict(location) for location in analysis.locations],
             "chapters": [chapter_to_dict(chapter) for chapter in chapters],
             "scenes": scenes,
+            "coverage_report": analysis.coverage_report,
             "notes": [
                 "当前版本使用本地规则引擎生成剧本初稿，适合作为 AI 或人工二次打磨的结构化底稿。",
                 f"故事基调：{analysis.tone}。",
@@ -67,6 +72,7 @@ def character_to_dict(character: Character) -> dict[str, Any]:
         "role": character.role,
         "description": character.description,
         "traits": character.traits,
+        "speech_style": character.speech_style,
     }
 
 

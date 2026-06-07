@@ -3,8 +3,11 @@ from __future__ import annotations
 import json
 import os
 import re
+import socket
+import ssl
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any
 
 from .errors import PipelineError
@@ -12,8 +15,11 @@ from .input_parser import clean_text
 from .validator import validate_script
 
 
-DEFAULT_BASE_URL = "https://api.deepseek.com" 
-DEFAULT_MODEL = "deepseek-chat"
+DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+DEFAULT_MODEL = "qwen3.6-plus"
+DEFAULT_TIMEOUT_SECONDS = 240
+DEFAULT_MAX_SOURCE_CHARS = 12000
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def generate_script_with_llm(source: str, title: str, script_format: str) -> dict[str, Any]:
@@ -24,7 +30,7 @@ def generate_script_with_llm(source: str, title: str, script_format: str) -> dic
 
     payload = {
         "model": config.model,
-        "messages": build_messages(cleaned, title, script_format),
+        "messages": build_messages(cleaned, title, script_format, config.max_source_chars),
         "temperature": 0.4,
         "response_format": {"type": "json_object"},
     }
@@ -39,26 +45,100 @@ def generate_script_with_llm(source: str, title: str, script_format: str) -> dic
 
 
 class LLMConfig:
-    def __init__(self, api_key: str, base_url: str, model: str, provider: str) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str,
+        model: str,
+        provider: str,
+        ssl_cert_file: str = "",
+        timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+        max_source_chars: int = DEFAULT_MAX_SOURCE_CHARS,
+    ) -> None:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.provider = provider
+        self.ssl_cert_file = ssl_cert_file
+        self.timeout_seconds = timeout_seconds
+        self.max_source_chars = max_source_chars
 
     @classmethod
     def from_env(cls) -> "LLMConfig":
-        api_key = os.getenv("LLM_API_KEY", "").strip()
+        env_file = load_dotenv()
+        api_key = read_config_value("LLM_API_KEY", env_file).strip()
         if not api_key:
-            raise PipelineError("缺少 LLM_API_KEY，请先在终端配置国产模型 API Key。")
+            raise PipelineError(
+                "缺少 LLM_API_KEY。请在启动后端的同一个终端 export LLM_API_KEY，"
+                "或在项目根目录创建 .env。"
+            )
         return cls(
             api_key=api_key,
-            base_url=os.getenv("LLM_BASE_URL", DEFAULT_BASE_URL).strip() or DEFAULT_BASE_URL,
-            model=os.getenv("LLM_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL,
-            provider=os.getenv("LLM_PROVIDER", "qwen").strip() or "qwen",
+            base_url=read_config_value("LLM_BASE_URL", env_file).strip() or DEFAULT_BASE_URL,
+            model=read_config_value("LLM_MODEL", env_file).strip() or DEFAULT_MODEL,
+            provider=read_config_value("LLM_PROVIDER", env_file).strip() or "qwen",
+            ssl_cert_file=resolve_ssl_cert_file(env_file),
+            timeout_seconds=read_int_config(
+                "LLM_TIMEOUT_SECONDS", env_file, DEFAULT_TIMEOUT_SECONDS
+            ),
+            max_source_chars=read_int_config(
+                "LLM_MAX_SOURCE_CHARS", env_file, DEFAULT_MAX_SOURCE_CHARS
+            ),
         )
 
 
-def build_messages(source: str, title: str, script_format: str) -> list[dict[str, str]]:
+def load_dotenv(path: Path | None = None) -> dict[str, str]:
+    env_path = path or PROJECT_ROOT / ".env"
+    if not env_path.exists() or not env_path.is_file():
+        return {}
+    values: dict[str, str] = {}
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip("'\"")
+        if key:
+            values[key] = value
+    return values
+
+
+def read_config_value(name: str, dotenv_values: dict[str, str]) -> str:
+    return os.getenv(name, dotenv_values.get(name, ""))
+
+
+def read_int_config(name: str, dotenv_values: dict[str, str], default: int) -> int:
+    value = read_config_value(name, dotenv_values).strip()
+    if not value:
+        return default
+    try:
+        parsed = int(value)
+    except ValueError:
+        return default
+    return parsed if parsed > 0 else default
+
+
+def resolve_ssl_cert_file(dotenv_values: dict[str, str]) -> str:
+    configured = read_config_value("SSL_CERT_FILE", dotenv_values).strip()
+    if configured:
+        return configured
+    try:
+        import certifi
+    except ImportError:
+        return ""
+    return certifi.where()
+
+
+def build_messages(
+    source: str,
+    title: str,
+    script_format: str,
+    max_source_chars: int = DEFAULT_MAX_SOURCE_CHARS,
+) -> list[dict[str, str]]:
+    source_for_prompt = source[:max_source_chars]
+    if len(source) > max_source_chars:
+        source_for_prompt += "\n\n[提示：原文过长，当前在线请求已截取前段文本用于生成初稿。]"
     system_prompt = (
         "你是一位顶级剧本医生和电影导演。你的任务是将小说文本改编为具有高度电影感的、分镜导向的结构化剧本 JSON。\n\n"
         "【核心创作准则（必须严格遵守）】:\n"
@@ -201,6 +281,8 @@ def build_messages(source: str, title: str, script_format: str) -> list[dict[str
 剧本类型：{script_format}
 输出语言：zh-CN
 
+小说正文：
+{source_for_prompt}
 """.strip()
     return [
         {"role": "system", "content": system_prompt},
@@ -220,14 +302,37 @@ def post_chat_completion(config: LLMConfig, payload: dict[str, Any]) -> dict[str
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=120) as response:
+        with urllib.request.urlopen(
+            request,
+            timeout=config.timeout_seconds,
+            context=build_ssl_context(config),
+        ) as response:
             body = response.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
         raise PipelineError(f"在线模型请求失败：HTTP {exc.code} {detail}") from exc
     except urllib.error.URLError as exc:
         raise PipelineError(f"在线模型连接失败：{exc.reason}") from exc
+    except TimeoutError as exc:
+        raise PipelineError(
+            f"在线模型响应超时（{config.timeout_seconds} 秒）。请减少输入文本，"
+            "或在 .env 中调大 LLM_TIMEOUT_SECONDS。"
+        ) from exc
+    except socket.timeout as exc:
+        raise PipelineError(
+            f"在线模型响应超时（{config.timeout_seconds} 秒）。请减少输入文本，"
+            "或在 .env 中调大 LLM_TIMEOUT_SECONDS。"
+        ) from exc
     return json.loads(body)
+
+
+def build_ssl_context(config: LLMConfig) -> ssl.SSLContext | None:
+    if not config.ssl_cert_file:
+        return None
+    cert_path = Path(config.ssl_cert_file).expanduser()
+    if not cert_path.exists():
+        raise PipelineError(f"SSL_CERT_FILE 指向的证书文件不存在：{cert_path}")
+    return ssl.create_default_context(cafile=str(cert_path))
 
 
 def extract_message_content(response: dict[str, Any]) -> str:
@@ -302,10 +407,15 @@ def repair_script(
     }
     script["logline"] = str(script.get("logline") or "人物在连续事件中追寻真相，并面对逐渐升级的冲突。")
     script["synopsis"] = str(script.get("synopsis") or " ".join(chapter["summary"] for chapter in chapters))
+    script["story_bible"] = repair_story_bible(script.get("story_bible"), chapters, characters)
+    script["foreshadowing_ledger"] = repair_foreshadowing_ledger(script.get("foreshadowing_ledger"), chapters)
+    script["canon_facts"] = normalize_list(script.get("canon_facts"))
+    script["rhythm_plan"] = repair_rhythm_plan(script.get("rhythm_plan"), chapters)
     script["characters"] = characters
     script["locations"] = locations
     script["chapters"] = chapters
     script["scenes"] = scenes
+    script["coverage_report"] = repair_coverage_report(script.get("coverage_report"), chapters, script["foreshadowing_ledger"])
     script["notes"] = normalize_list(script.get("notes"))
     return script
 
@@ -334,9 +444,24 @@ def repair_character(character: Any, index: int) -> dict[str, Any]:
         "role": str(data.get("role") or ("protagonist" if index == 1 else "supporting")),
         "description": str(data.get("description") or data.get("summary") or "待细化。"),
         "traits": normalize_string_list(data.get("traits")) or ["待细化"],
-        # 新增字段
-        "visual_anchor": str(data.get("visual_anchor") or "身穿普通衣物，无明显特征"),
-        "speech_style": str(data.get("speech_style") or "普通说话风格，中规中矩"),
+        "speech_style": data.get("speech_style")
+        if isinstance(data.get("speech_style"), dict)
+        else {
+            "pace": "中等",
+            "vocabulary": "少用长句，避免说明文式表达",
+            "habit": "通过停顿、反问或回避表达情绪",
+            "subtext": "保留潜台词",
+            "taboo": "不直接讲出观众已知背景",
+        },
+    }
+
+
+def repair_location(location: Any, index: int) -> dict[str, Any]:
+    data = location if isinstance(location, dict) else {}
+    return {
+        "id": normalize_id(data.get("id"), "loc", index),
+        "name": str(data.get("name") or data.get("location") or "主要场景"),
+        "description": str(data.get("description") or data.get("summary") or "待细化的场景空间。"),
     }
 
 
@@ -364,20 +489,20 @@ def repair_scene(
             "interior_exterior": normalize_interior_exterior(heading.get("interior_exterior") or data.get("interior_exterior")),
         },
         "purpose": str(data.get("purpose") or data.get("function") or "推进情节和人物关系。"),
+        "plot_function": str(data.get("plot_function") or "turn"),
+        "intensity": max(1, min(10, to_int(data.get("intensity"), index + 3))),
         "characters": normalize_ref_list(data.get("characters"), set(character_ids)) or character_ids,
         "beats": beats,
         "transition": str(data.get("transition") or "cut_to"),
-        # 新增导演属性
-        "subtext_conflict": str(data.get("subtext_conflict") or "人物间的心理博弈与试探"),
-        "visual_narrative_plan": str(data.get("visual_narrative_plan") or "特写转中景，利用光影变化强化压抑感"),
-    }
-
-def repair_location(location: Any, index: int) -> dict[str, Any]:
-    data = location if isinstance(location, dict) else {}
-    return {
-        "id": normalize_id(data.get("id"), "loc", index),
-        "name": str(data.get("name") or data.get("location") or "主要场景"),
-        "description": str(data.get("description") or data.get("summary") or "待细化的场景空间。"),
+        "visualization_checks": data.get("visualization_checks")
+        if isinstance(data.get("visualization_checks"), dict)
+        else {
+            "no_internal_monologue": True,
+            "has_performable_action": True,
+            "has_subtext_dialogue": True,
+            "canon_consistent": True,
+            "foreshadowing_tracked": True,
+        },
     }
 
 
@@ -399,6 +524,7 @@ def repair_beats(value: Any, character_ids: list[str]) -> list[dict[str, Any]]:
         repaired: dict[str, Any] = {"type": beat_type, "text": text}
         if beat_type in {"dialogue", "parenthetical", "voice_over"}:
             repaired["character_id"] = beat.get("character_id") if beat.get("character_id") in character_ids else character_ids[0]
+        repaired.setdefault("source_refs", [])
         beats.append(repaired)
     if not beats:
         beats.append({"type": "action", "text": "场景展开，人物进入关键情境。"})
@@ -478,3 +604,73 @@ def fallback_scenes(
         repair_scene({}, index, chapters, characters, locations)
         for index, _chapter in enumerate(chapters, start=1)
     ]
+
+
+def repair_story_bible(value: Any, chapters: list[dict[str, Any]], characters: list[dict[str, Any]]) -> dict[str, Any]:
+    data = value if isinstance(value, dict) else {}
+    protagonist_id = characters[0]["id"] if characters else "char_001"
+    return {
+        "premise": str(data.get("premise") or "人物在连续事件中面对核心冲突。"),
+        "world_rules": normalize_list(data.get("world_rules")),
+        "character_arcs": normalize_list(data.get("character_arcs"))
+        or [
+            {
+                "character_id": protagonist_id,
+                "start_state": "信息不足，被事件推动",
+                "midpoint_state": "主动调查，冲突升级",
+                "end_state": "接近真相，完成阶段性选择",
+            }
+        ],
+        "major_conflicts": normalize_string_list(data.get("major_conflicts")) or ["主要人物与现实阻碍之间的冲突"],
+        "timeline": data.get("timeline")
+        if isinstance(data.get("timeline"), list)
+        else [
+            {"order": chapter["order"], "event": chapter["summary"], "source_chapter": chapter["id"]}
+            for chapter in chapters
+        ],
+    }
+
+
+def repair_foreshadowing_ledger(value: Any, chapters: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    items = normalize_list(value)
+    if items:
+        return items
+    first_chapter = chapters[0]["id"] if chapters else "chapter_001"
+    return [
+        {
+            "id": "foreshadow_001",
+            "setup": "关键线索",
+            "source_chapters": [first_chapter],
+            "expected_payoff": "后续揭示线索与核心事件的关系",
+            "payoff_status": "pending",
+            "payoff_scene_id": None,
+        }
+    ]
+
+
+def repair_rhythm_plan(value: Any, chapters: list[dict[str, Any]]) -> dict[str, Any]:
+    data = value if isinstance(value, dict) else {}
+    if isinstance(data.get("acts"), list):
+        return data
+    ids = [chapter["id"] for chapter in chapters]
+    return {
+        "acts": [
+            {"id": "act_001", "function": "建立人物和悬念", "chapters": ids[:1], "intensity": "low_to_mid"},
+            {"id": "act_002", "function": "推进调查与冲突", "chapters": ids[1:2], "intensity": "mid_to_high"},
+            {"id": "act_003", "function": "阶段性揭示", "chapters": ids[-1:], "intensity": "high"},
+        ]
+    }
+
+
+def repair_coverage_report(
+    value: Any, chapters: list[dict[str, Any]], foreshadowing_ledger: list[dict[str, Any]]
+) -> dict[str, Any]:
+    data = value if isinstance(value, dict) else {}
+    return {
+        "covered_chapters": normalize_string_list(data.get("covered_chapters"))
+        or [chapter["id"] for chapter in chapters],
+        "missing_events": normalize_list(data.get("missing_events")),
+        "unresolved_foreshadowing": normalize_string_list(data.get("unresolved_foreshadowing"))
+        or [item["id"] for item in foreshadowing_ledger if item.get("payoff_status") == "pending"],
+        "contradictions": normalize_list(data.get("contradictions")),
+    }

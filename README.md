@@ -41,11 +41,29 @@ open index.html
 
 启动在线 AI 接口：
 
+方式一：使用项目根目录 `.env` 文件。
+
+```bash
+cp .env.example .env
+```
+
+然后把 `.env` 里的 `LLM_API_KEY` 改成你的百炼 API Key。`.env` 已被 `.gitignore` 忽略，不会提交到仓库。
+
+方式二：在启动后端的同一个终端里 export。
+
 ```bash
 export LLM_PROVIDER="qwen"
 export LLM_API_KEY="你的百炼API_KEY"
 export LLM_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
 export LLM_MODEL="qwen3.6-plus"
+export LLM_TIMEOUT_SECONDS="240"
+export LLM_MAX_SOURCE_CHARS="12000"
+PYTHONPATH=src python3 -m novel2script.server
+```
+
+如果你使用 `.env`，启动命令只需要：
+
+```bash
 PYTHONPATH=src python3 -m novel2script.server
 ```
 

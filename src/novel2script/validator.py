@@ -26,8 +26,13 @@ def validate_script(script: dict[str, Any]) -> list[str]:
         "synopsis",
         "characters",
         "locations",
+        "story_bible",
+        "foreshadowing_ledger",
+        "canon_facts",
+        "rhythm_plan",
         "chapters",
         "scenes",
+        "coverage_report",
         "notes",
     ]
     for field in required:
@@ -51,6 +56,7 @@ def validate_script(script: dict[str, Any]) -> list[str]:
     character_ids = collect_ids(characters, "characters", errors)
     location_ids = collect_ids(locations, "locations", errors)
     chapter_ids = collect_ids(chapters, "chapters", errors)
+    validate_long_context_fields(script, errors)
 
     if not isinstance(scenes, list) or not scenes:
         errors.append("script.scenes 至少需要 1 个场景")
@@ -72,8 +78,35 @@ def validate_script(script: dict[str, Any]) -> list[str]:
 
         validate_scene_refs(scene, scene_id, chapter_ids, character_ids, location_ids, errors)
         validate_beats(scene, scene_id, character_ids, errors)
+        validate_scene_quality_fields(scene, scene_id, errors)
 
     return errors
+
+
+def validate_long_context_fields(script: dict[str, Any], errors: list[str]) -> None:
+    if not isinstance(script.get("story_bible"), dict):
+        errors.append("script.story_bible 必须是对象")
+    if not isinstance(script.get("foreshadowing_ledger"), list):
+        errors.append("script.foreshadowing_ledger 必须是数组")
+    if not isinstance(script.get("canon_facts"), list):
+        errors.append("script.canon_facts 必须是数组")
+    if not isinstance(script.get("rhythm_plan"), dict):
+        errors.append("script.rhythm_plan 必须是对象")
+    if not isinstance(script.get("coverage_report"), dict):
+        errors.append("script.coverage_report 必须是对象")
+
+
+def validate_scene_quality_fields(scene: dict[str, Any], scene_id: str, errors: list[str]) -> None:
+    if "plot_function" in scene and not isinstance(scene["plot_function"], str):
+        errors.append(f"{scene_id}.plot_function 必须是字符串")
+    intensity = scene.get("intensity")
+    if intensity is not None and (
+        not isinstance(intensity, int) or intensity < 1 or intensity > 10
+    ):
+        errors.append(f"{scene_id}.intensity 必须是 1-10 的整数")
+    checks = scene.get("visualization_checks")
+    if not isinstance(checks, dict):
+        errors.append(f"{scene_id}.visualization_checks 必须是对象")
 
 
 def collect_ids(items: Any, label: str, errors: list[str]) -> set[str]:

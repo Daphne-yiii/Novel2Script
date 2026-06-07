@@ -33,6 +33,13 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(len(script["scenes"]), 3)
         self.assertEqual(script["scenes"][0]["source_chapters"], ["chapter_001"])
         self.assertIn("location_id", script["scenes"][0]["heading"])
+        self.assertIn("story_bible", script)
+        self.assertIn("foreshadowing_ledger", script)
+        self.assertIn("canon_facts", script)
+        self.assertIn("rhythm_plan", script)
+        self.assertIn("coverage_report", script)
+        self.assertIn("visualization_checks", script["scenes"][0])
+        self.assertIn("source_refs", script["scenes"][0]["beats"][0])
         self.assertEqual(validate_script(script), [])
 
     def test_yaml_writer_outputs_script_root(self):

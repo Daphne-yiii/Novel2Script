@@ -18,11 +18,9 @@ class Character:
     name: str
     role: str
     description: str
-    traits: List[str]
-   
-    visual_anchor: str 
-   
-    speech_style: str
+    traits: list[str]
+    speech_style: dict[str, str]
+
 
 @dataclass(frozen=True)
 class Location:
@@ -39,7 +37,13 @@ class StoryAnalysis:
     timeline: List[str]
     major_events: List[str]
     tone: str
-    conflicts: List[str]
+    conflicts: list[str]
+    story_bible: dict
+    foreshadowing_ledger: list[dict]
+    canon_facts: list[dict]
+    rhythm_plan: dict
+    coverage_report: dict
+
 
 @dataclass(frozen=True)
 class ScenePlan:
@@ -50,12 +54,11 @@ class ScenePlan:
     time_of_day: str
     interior_exterior: str
     purpose: str
-    character_ids: List[str]
-    rewrite_strategy: List[str]
-    
-    subtext_conflict: str
-    
-    visual_narrative_plan: str
+    plot_function: str
+    intensity: int
+    character_ids: list[str]
+    rewrite_strategy: list[str]
+
 
 @dataclass(frozen=True)
 class AdaptationPlan:

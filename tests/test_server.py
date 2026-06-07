@@ -1,9 +1,19 @@
 import os
+import tempfile
 import unittest
 from io import BytesIO
+from pathlib import Path
 from unittest.mock import patch
 
-from novel2script.online_client import LLMConfig, parse_script_json, repair_script
+from novel2script.online_client import (
+    LLMConfig,
+    build_messages,
+    load_dotenv,
+    parse_script_json,
+    read_int_config,
+    repair_script,
+    resolve_ssl_cert_file,
+)
 from novel2script.validator import validate_script
 from novel2script.server import Novel2ScriptHandler
 
@@ -24,6 +34,42 @@ class OnlineClientTest(unittest.TestCase):
         self.assertEqual(config.api_key, "test-key")
         self.assertEqual(config.base_url, "https://example.com/v1")
         self.assertEqual(config.model, "qwen-test")
+
+    def test_load_dotenv_reads_local_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env_path = Path(directory) / ".env"
+            env_path.write_text(
+                "\n".join(
+                    [
+                        "LLM_PROVIDER=qwen",
+                        "LLM_API_KEY=test-key",
+                        "LLM_BASE_URL=https://example.com/v1",
+                        "LLM_MODEL=qwen-test",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            values = load_dotenv(env_path)
+
+        self.assertEqual(values["LLM_API_KEY"], "test-key")
+        self.assertEqual(values["LLM_MODEL"], "qwen-test")
+
+    def test_ssl_cert_file_defaults_to_certifi(self):
+        with patch.dict(os.environ, {}, clear=True):
+            cert_file = resolve_ssl_cert_file({})
+
+        self.assertTrue(cert_file.endswith("cacert.pem") or cert_file == "")
+
+    def test_timeout_config_reads_positive_int(self):
+        value = read_int_config("LLM_TIMEOUT_SECONDS", {"LLM_TIMEOUT_SECONDS": "300"}, 240)
+
+        self.assertEqual(value, 300)
+
+    def test_build_messages_truncates_long_source(self):
+        messages = build_messages("一" * 20, "测试", "screenplay", max_source_chars=10)
+
+        self.assertIn("原文过长", messages[1]["content"])
 
     def test_parse_script_json_strips_code_fence(self):
         script = parse_script_json(
@@ -66,7 +112,10 @@ class OnlineClientTest(unittest.TestCase):
 
         self.assertEqual(validate_script(repaired), [])
         self.assertEqual(repaired["source"]["type"], "novel")
+        self.assertIn("story_bible", repaired)
+        self.assertIn("coverage_report", repaired)
         self.assertEqual(repaired["scenes"][0]["id"], "scene_001")
+        self.assertIn("visualization_checks", repaired["scenes"][0])
         self.assertEqual(repaired["scenes"][0]["beats"][0]["text"], "林舟走进旧书店。")
 
 

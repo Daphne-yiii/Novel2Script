@@ -7,6 +7,7 @@ from .chapter_segmenter import ChapterSegmenter
 from .composer import YAMLComposer
 from .errors import PipelineError
 from .input_parser import InputParser
+from .quality_rewriter import SceneQualityRewriter
 from .scene_writer import SceneWriter
 from .story_analyzer import StoryAnalyzer
 from .validator import validate_script
@@ -22,6 +23,7 @@ class Novel2ScriptPipeline:
         self.story_analyzer = StoryAnalyzer()
         self.adaptation_planner = AdaptationPlanner()
         self.scene_writer = SceneWriter()
+        self.scene_quality_rewriter = SceneQualityRewriter()
         self.yaml_composer = YAMLComposer()
 
     def run(self, text: str, title: str | None = None) -> dict[str, Any]:
@@ -33,6 +35,8 @@ class Novel2ScriptPipeline:
         analysis = self.story_analyzer.analyze(cleaned_text, chapters)
         plan = self.adaptation_planner.plan(chapters, analysis)
         scenes = self.scene_writer.write(chapters, analysis, plan)
+        chapters_by_id = {chapter.id: chapter for chapter in chapters}
+        scenes = self.scene_quality_rewriter.rewrite(scenes, chapters_by_id)
         script = self.yaml_composer.compose(
             chapters,
             analysis,

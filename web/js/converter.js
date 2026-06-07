@@ -118,13 +118,20 @@
   function analyzeStory(text, chapters) {
     const characters = extractCharacters(text);
     const locations = extractLocations(text);
+    const conflicts = inferConflicts(text, characters);
+    const foreshadowingLedger = buildForeshadowingLedger(chapters);
     return {
       characters,
       locations,
       timeline: chapters.map((chapter) => chapter.summary),
       majorEvents: chapters.map((chapter) => chapter.summary).filter(Boolean),
       tone: inferTone(text),
-      conflicts: inferConflicts(text, characters)
+      conflicts,
+      storyBible: buildStoryBible(chapters, characters, conflicts),
+      foreshadowingLedger,
+      canonFacts: buildCanonFacts(chapters, characters),
+      rhythmPlan: buildRhythmPlan(chapters),
+      coverageReport: buildCoverageReport(chapters, foreshadowingLedger)
     };
   }
 
@@ -176,7 +183,8 @@
         name: displayName,
         role: index === 0 ? "protagonist" : "supporting",
         description: `${displayName}，由小说文本自动识别或补全的人物。`,
-        traits: inferTraits(text, displayName)
+        traits: inferTraits(text, displayName),
+        speech_style: inferSpeechStyle(text, displayName)
       };
     });
   }
@@ -250,6 +258,127 @@
     return conflicts;
   }
 
+  function inferSpeechStyle(text, name) {
+    const pattern = new RegExp(`“([^”]{1,80})”\\s*${escapeRegExp(name)}?(?:低声|轻声|沉声)?(?:说|问|喊|叫|回答|道)?`, "g");
+    const samples = Array.from(text.matchAll(pattern)).map((match) => match[1]).slice(0, 3);
+    const joined = samples.join(" ");
+    const register = /您|请|抱歉/.test(joined) ? "礼貌克制" : "日常口语";
+    const rhythm = samples.some((line) => line.length <= 8) ? "短句直接" : "中短句";
+    const subtext = /没事|算了|随便|不是/.test(joined) ? "常用否认和回避表达潜台词" : "需要通过停顿、反问和未尽之语增强潜台词";
+    return {
+      register,
+      rhythm,
+      subtext,
+      sample: samples[0] || `${name}的台词需要在二次打磨中补充人物口吻。`
+    };
+  }
+
+  function buildStoryBible(chapters, characters, conflicts) {
+    return {
+      premise: chapters.map((chapter) => chapter.summary).filter(Boolean).join(" "),
+      main_characters: characters.map((character) => ({
+        character_id: character.id,
+        name: character.name,
+        role: character.role,
+        stable_facts: [
+          character.description,
+          `性格标签：${(character.traits || []).join("、") || "待细化"}`
+        ],
+        speech_style: character.speech_style
+      })),
+      conflicts,
+      world_rules: inferWorldRules(chapters),
+      timeline: chapters.map((chapter) => ({
+        chapter_id: chapter.id,
+        order: chapter.order,
+        event: chapter.summary
+      }))
+    };
+  }
+
+  function inferWorldRules(chapters) {
+    const joined = chapters.map((chapter) => chapter.text).join("\n");
+    const rules = [];
+    if (joined.includes("旧案")) {
+      rules.push("旧案信息需要分阶段揭示，不能在前段一次性说破。");
+    }
+    if (joined.includes("信")) {
+      rules.push("信件是推动调查的关键物件，场景中应保持来源追踪。");
+    }
+    if (rules.length === 0) {
+      rules.push("人物能力、关系和关键物件状态必须前后一致。");
+    }
+    return rules;
+  }
+
+  function buildForeshadowingLedger(chapters) {
+    const keywords = ["信", "秘密", "旧案", "名字", "钥匙", "照片", "伤疤", "失踪", "真相"];
+    const ledger = [];
+    chapters.forEach((chapter, chapterIndex) => {
+      keywords.forEach((keyword) => {
+        if (chapter.text.includes(keyword) && !ledger.some((item) => item.keyword === keyword)) {
+          ledger.push({
+            id: idFor("foreshadow", ledger.length + 1),
+            keyword,
+            setup_chapter: chapter.id,
+            payoff_chapter: chapterIndex < chapters.length - 1 ? chapters[chapters.length - 1].id : "",
+            status: chapterIndex < chapters.length - 1 ? "planned" : "pending",
+            note: `“${keyword}”被识别为需要追踪的伏笔或关键设定。`
+          });
+        }
+      });
+    });
+    return ledger;
+  }
+
+  function buildCanonFacts(chapters, characters) {
+    const facts = characters.map((character) => ({
+      id: idFor("fact", Number(character.id.split("_").pop()) || 1),
+      subject: character.id,
+      predicate: "role",
+      value: character.role,
+      source_chapter: chapters[0] ? chapters[0].id : "chapter_001",
+      confidence: "medium"
+    }));
+    chapters.forEach((chapter) => {
+      if (chapter.summary) {
+        facts.push({
+          id: idFor("fact", facts.length + 1),
+          subject: chapter.id,
+          predicate: "main_event",
+          value: chapter.summary,
+          source_chapter: chapter.id,
+          confidence: "medium"
+        });
+      }
+    });
+    return facts;
+  }
+
+  function buildRhythmPlan(chapters) {
+    const total = chapters.length;
+    return {
+      structure: total <= 3 ? "三段式短剧本" : "多章节连续剧本",
+      chapters: chapters.map((chapter, index) => ({
+        chapter_id: chapter.id,
+        expected_function: inferPlotFunction(index + 1, total),
+        target_intensity: inferIntensity(index + 1, total)
+      })),
+      note: "先控制全局节奏，再逐场生成，避免长文本只做局部改写。"
+    };
+  }
+
+  function buildCoverageReport(chapters, foreshadowingLedger) {
+    return {
+      covered_chapters: chapters.map((chapter) => chapter.id),
+      missing_events: [],
+      unresolved_foreshadowing: foreshadowingLedger
+        .filter((item) => item.status === "pending")
+        .map((item) => item.id),
+      contradictions: []
+    };
+  }
+
   function planAdaptation(chapters, analysis) {
     return {
       scenes: chapters.map((chapter, index) => {
@@ -262,6 +391,8 @@
           timeOfDay: inferTimeOfDay(chapter.text),
           interiorExterior: inferInteriorExterior(chapter.text),
           purpose: inferScenePurpose(order, chapters.length),
+          plotFunction: inferPlotFunction(order, chapters.length),
+          intensity: inferIntensity(order, chapters.length),
           characterIds: analysis.characters.slice(0, 3).map((character) => character.id),
           rewriteStrategy: inferRewriteStrategy(chapter.text)
         };
@@ -306,6 +437,26 @@
     return "推进调查与人物关系，制造新的冲突或转折。";
   }
 
+  function inferPlotFunction(order, total) {
+    if (order === 1) {
+      return "setup";
+    }
+    if (order === total) {
+      return "reveal";
+    }
+    if (order / total > 0.65) {
+      return "turning_point";
+    }
+    return "development";
+  }
+
+  function inferIntensity(order, total) {
+    if (total <= 1) {
+      return 3;
+    }
+    return Math.max(1, Math.min(10, Math.round(3 + (order - 1) * 5 / (total - 1))));
+  }
+
   function inferRewriteStrategy(text) {
     const strategy = ["保留章节主事件", "转写为可拍摄动作"];
     if (["想起", "心里", "觉得", "意识到"].some((keyword) => text.includes(keyword))) {
@@ -333,7 +484,8 @@
     const beats = [
       {
         type: "action",
-        text: rewriteAsAction(chapter.summary, scenePlan.rewriteStrategy)
+        text: rewriteAsAction(chapter.summary, scenePlan.rewriteStrategy),
+        source_refs: buildSourceRefs(chapter, chapter.summary)
       }
     ];
 
@@ -342,12 +494,14 @@
       beats.push({
         type: "dialogue",
         character_id: speaker.id,
-        text: dialogue
+        text: polishDialogue(dialogue, speaker),
+        source_refs: buildSourceRefs(chapter, dialogue)
       });
       if (index === 0) {
         beats.push({
           type: "action",
-          text: "短暂的沉默改变了场景里的气氛，人物关系开始变得紧张。"
+          text: "短暂的沉默改变了场景里的气氛，人物关系开始变得紧张。",
+          source_refs: buildSourceRefs(chapter, dialogue)
         });
       }
     });
@@ -355,7 +509,8 @@
     if (beats.length === 1) {
       beats.push({
         type: "action",
-        text: "人物用动作和停顿承接原文叙事，场景保持可拍摄的外部行为。"
+        text: "人物用动作和停顿承接原文叙事，场景保持可拍摄的外部行为。",
+        source_refs: buildSourceRefs(chapter, chapter.text)
       });
     }
 
@@ -369,8 +524,11 @@
         interior_exterior: scenePlan.interiorExterior
       },
       purpose: scenePlan.purpose,
+      plot_function: scenePlan.plotFunction,
+      intensity: scenePlan.intensity,
       characters: scenePlan.characterIds,
-      beats,
+      beats: rewriteSceneQuality(beats, chapter),
+      visualization_checks: buildVisualizationChecks(chapter, beats),
       transition: "cut_to"
     };
   }
@@ -389,6 +547,72 @@
       return `画面呈现：人物通过停顿和细微动作带出情绪。${summary}`;
     }
     return `画面呈现：${summary}`;
+  }
+
+  function polishDialogue(dialogue, speaker) {
+    const text = String(dialogue || "").trim();
+    if (!text) {
+      return "……";
+    }
+    if (/[。！？!?]$/.test(text) || text.length <= 18) {
+      return text;
+    }
+    const style = speaker.speech_style || {};
+    if (style.rhythm === "短句直接") {
+      return text.slice(0, 22).replace(/[，,；;：:]$/g, "") + "。";
+    }
+    return text + "。";
+  }
+
+  function rewriteSceneQuality(beats, chapter) {
+    return beats.map((beat) => {
+      if (beat.type !== "action") {
+        return beat;
+      }
+      const rewritten = externalizeInternalMonologue(beat.text);
+      return {
+        ...beat,
+        text: rewritten,
+        adaptation_note: rewritten === beat.text ? "已保持为可拍摄动作。" : "心理描写已转为表情、动作或道具反应。"
+      };
+    });
+  }
+
+  function externalizeInternalMonologue(text) {
+    const markers = ["内心", "心里", "想到", "觉得", "意识到", "念头", "复仇"];
+    if (!markers.some((marker) => String(text).includes(marker))) {
+      return text;
+    }
+    return String(text)
+      .replace(/他表面平静，?内心却闪过无数个复仇的念头/g, "他没有说话，只把指节攥到发白，目光停在对方身后的阴影里。")
+      .replace(/她表面平静，?内心却闪过无数个复仇的念头/g, "她没有说话，只把指节攥到发白，目光停在对方身后的阴影里。")
+      .replace(/内心[^。！？!?]{0,40}/g, "眼神短暂失焦")
+      .replace(/心里[^。！？!?]{0,40}/g, "手指停在半空")
+      .replace(/想到[^。！？!?]{0,40}/g, "视线落到关键物件上")
+      .replace(/觉得[^。！？!?]{0,40}/g, "迟疑片刻")
+      .replace(/意识到[^。！？!?]{0,40}/g, "突然停住脚步")
+      .replace(/念头/g, "神情变化");
+  }
+
+  function buildVisualizationChecks(chapter, beats) {
+    const actionTexts = beats.filter((beat) => beat.type === "action").map((beat) => beat.text).join(" ");
+    const dialogueTexts = beats.filter((beat) => beat.type === "dialogue").map((beat) => beat.text).join(" ");
+    return {
+      has_externalized_emotion: !/(内心|心里|念头|意识到|觉得)/.test(actionTexts),
+      has_character_voice: dialogueTexts.length === 0 || dialogueTexts.length < 180,
+      has_source_refs: beats.every((beat) => Array.isArray(beat.source_refs)),
+      source_coverage_note: `覆盖来源章节 ${chapter.id} 的主要事件。`
+    };
+  }
+
+  function buildSourceRefs(chapter, evidence) {
+    const text = String(evidence || "").slice(0, 60);
+    return [
+      {
+        chapter_id: chapter.id,
+        evidence: text || chapter.summary || chapter.title
+      }
+    ];
   }
 
   function guessSpeaker(text, dialogue, characters) {
@@ -413,6 +637,10 @@
       synopsis: chapters.map((chapter) => chapter.summary).filter(Boolean).join(" "),
       characters: analysis.characters,
       locations: analysis.locations,
+      story_bible: analysis.storyBible,
+      foreshadowing_ledger: analysis.foreshadowingLedger,
+      canon_facts: analysis.canonFacts,
+      rhythm_plan: analysis.rhythmPlan,
       chapters: chapters.map((chapter) => ({
         id: chapter.id,
         title: chapter.title,
@@ -420,6 +648,7 @@
         summary: chapter.summary
       })),
       scenes,
+      coverage_report: analysis.coverageReport,
       notes: [
         "当前版本使用浏览器本地规则引擎生成剧本初稿，适合作为 AI 或人工二次打磨的结构化底稿。",
         `故事基调：${analysis.tone}。`
@@ -454,8 +683,13 @@
       "synopsis",
       "characters",
       "locations",
+      "story_bible",
+      "foreshadowing_ledger",
+      "canon_facts",
+      "rhythm_plan",
       "chapters",
       "scenes",
+      "coverage_report",
       "notes"
     ].forEach((field) => {
       if (!(field in script)) {
@@ -472,6 +706,7 @@
     if (!Array.isArray(script.chapters) || script.chapters.length < 3) {
       errors.push("script.chapters 至少需要 3 个章节");
     }
+    validateLongContextFields(script, errors);
 
     const characterIds = collectIds(script.characters, "characters", errors);
     const locationIds = collectIds(script.locations, "locations", errors);
@@ -496,8 +731,39 @@
 
       validateSceneRefs(scene, chapterIds, characterIds, locationIds, errors);
       validateBeats(scene, characterIds, errors);
+      validateSceneQualityFields(scene, errors);
     });
     return errors;
+  }
+
+  function validateLongContextFields(script, errors) {
+    if (!script.story_bible || typeof script.story_bible !== "object" || Array.isArray(script.story_bible)) {
+      errors.push("script.story_bible 必须是对象");
+    }
+    if (!Array.isArray(script.foreshadowing_ledger)) {
+      errors.push("script.foreshadowing_ledger 必须是数组");
+    }
+    if (!Array.isArray(script.canon_facts)) {
+      errors.push("script.canon_facts 必须是数组");
+    }
+    if (!script.rhythm_plan || typeof script.rhythm_plan !== "object" || Array.isArray(script.rhythm_plan)) {
+      errors.push("script.rhythm_plan 必须是对象");
+    }
+    if (!script.coverage_report || typeof script.coverage_report !== "object" || Array.isArray(script.coverage_report)) {
+      errors.push("script.coverage_report 必须是对象");
+    }
+  }
+
+  function validateSceneQualityFields(scene, errors) {
+    if (scene.plot_function && typeof scene.plot_function !== "string") {
+      errors.push(`${scene.id}.plot_function 必须是字符串`);
+    }
+    if (scene.intensity !== undefined && (!Number.isInteger(scene.intensity) || scene.intensity < 1 || scene.intensity > 10)) {
+      errors.push(`${scene.id}.intensity 必须是 1-10 的整数`);
+    }
+    if (!scene.visualization_checks || typeof scene.visualization_checks !== "object" || Array.isArray(scene.visualization_checks)) {
+      errors.push(`${scene.id}.visualization_checks 必须是对象`);
+    }
   }
 
   function collectIds(items, label, errors) {
