@@ -71,6 +71,8 @@ def write_scene(
             "interior_exterior": scene_plan.interior_exterior,
         },
         "purpose": scene_plan.purpose,
+        "plot_function": scene_plan.plot_function,
+        "intensity": scene_plan.intensity,
         "characters": scene_plan.character_ids,
         "beats": beats,
         "transition": "cut_to",

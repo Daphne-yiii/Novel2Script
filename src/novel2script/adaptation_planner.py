@@ -17,6 +17,8 @@ class AdaptationPlanner:
                 time_of_day=infer_time_of_day(chapter.text),
                 interior_exterior=infer_interior_exterior(chapter.text),
                 purpose=infer_scene_purpose(index, len(chapters)),
+                plot_function=infer_plot_function(index, len(chapters), chapter.text),
+                intensity=infer_intensity(index, len(chapters), chapter.text),
                 character_ids=[character.id for character in analysis.characters[:3]],
                 rewrite_strategy=infer_rewrite_strategy(chapter.text),
             )
@@ -38,6 +40,25 @@ def infer_scene_purpose(order: int, total: int) -> str:
     if order == total:
         return "推动阶段性揭示，为后续冲突或结局留下明确方向。"
     return "推进调查与人物关系，制造新的冲突或转折。"
+
+
+def infer_plot_function(order: int, total: int, text: str) -> str:
+    if order == 1:
+        return "setup"
+    if order == total:
+        return "payoff"
+    if any(keyword in text for keyword in ["发现", "终于", "真相", "名字"]):
+        return "reveal"
+    return "turn"
+
+
+def infer_intensity(order: int, total: int, text: str) -> int:
+    base = 3 + min(4, order)
+    if order == total:
+        base = 8
+    if any(keyword in text for keyword in ["冲突", "怒", "死", "血", "真相", "旧案"]):
+        base += 1
+    return max(1, min(10, base))
 
 
 def infer_rewrite_strategy(text: str) -> list[str]:

@@ -19,6 +19,7 @@ class Character:
     role: str
     description: str
     traits: list[str]
+    speech_style: dict[str, str]
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,11 @@ class StoryAnalysis:
     major_events: list[str]
     tone: str
     conflicts: list[str]
+    story_bible: dict
+    foreshadowing_ledger: list[dict]
+    canon_facts: list[dict]
+    rhythm_plan: dict
+    coverage_report: dict
 
 
 @dataclass(frozen=True)
@@ -47,6 +53,8 @@ class ScenePlan:
     time_of_day: str
     interior_exterior: str
     purpose: str
+    plot_function: str
+    intensity: int
     character_ids: list[str]
     rewrite_strategy: list[str]
 

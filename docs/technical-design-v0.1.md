@@ -1,9 +1,5 @@
 # AI 小说转剧本工具通用 Prompt 模板 v0.1
 
-以下模板可直接复制给 AI Agent，用于生成或实现“小说文本转结构化剧本 YAML”的工具。
-
-## 通用 Prompt 模板（可直接复制）
-
 ```text
 # 角色
 {role: 你是一位资深的 AI 剧本改编工具开发者，精通小说叙事分析、剧本结构设计、YAML 数据建模、Schema 校验和 Agent Pipeline 工程实现。}
@@ -36,6 +32,26 @@
   - 提取人物、地点、时间线、主要事件、情绪基调、冲突关系。
   - 为主要人物生成语言画像，包括年龄、身份、地域、说话节奏、常用句式、表达禁忌和潜台词倾向。
   - 生成全局故事理解结果，供后续改编使用。
+- Long Context Manager:
+  - 面向长篇小说建立分层记忆，不将百万字文本一次性塞入单次模型调用。
+  - 生成章节级、卷级、篇章级、全书级摘要。
+  - 在生成单场景前检索相关章节、人物线、伏笔、设定事实和时间线。
+  - 区分“当前场景上下文”和“全局不可违背设定”。
+- Story Bible Builder:
+  - 建立故事圣经，记录世界观规则、人物弧光、人物关系、能力边界、关键道具、主线/支线和时间线。
+  - 将故事圣经作为后续分集、分幕、分场生成的硬约束。
+- Foreshadowing Tracker:
+  - 建立伏笔账本，记录伏笔的 setup、推进、payoff 和当前状态。
+  - 检查伏笔是否遗漏、提前揭示、错误改写或没有回收。
+- Canon Consistency Checker:
+  - 建立设定事实表，记录人物能力、关系、身份、时间、地点、死亡/失踪状态等事实。
+  - 检查人物能力突变、时间线矛盾、关系矛盾和世界观规则冲突。
+- Rhythm Planner:
+  - 在逐场景生成前规划全局起承转合、分幕/分集节奏、高低潮分布和关键转折。
+  - 为每个场景标注 plot_function、intensity 和对应的全局节奏位置。
+- Coverage Checker:
+  - 检查章节主要事件、关键人物、关键地点、伏笔、人物线是否被剧本覆盖。
+  - 输出 missing_events、unresolved_foreshadowing、contradictions 和人工确认项。
 - Adaptation Planner:
   - 将小说章节规划为剧本场次。
   - 决定每章对应几个场景。
@@ -97,6 +113,11 @@
 - 台词应优先使用潜台词、停顿、反问、打断、回避和短句，避免把背景信息直接讲给观众听。
 - 每个场景应有明确戏剧功能，例如铺垫、冲突、转折、揭示、高潮。
 - 保留原章节映射，方便作者追溯来源文本。
+- 长篇小说改编必须先建立全局故事控制系统，再进行局部场景生成。
+- 禁止只按章节顺序做单章到单场景的局部转换；必须先生成故事圣经、伏笔账本、设定事实表和节奏规划。
+- 关键人物能力、关系、死亡、背叛、身份揭示、关键道具和世界观规则必须绑定 source_refs；没有来源证据时不得生成成既定事实。
+- 每个伏笔必须记录 setup 与 payoff 状态；未回收伏笔必须进入 coverage_report 或 notes。
+- 每个场景必须标注 plot_function 和 intensity，用于控制整部剧的节奏起伏。
 }
 
 # 产物技术与合规约束（严格遵守）
@@ -110,7 +131,12 @@
   - LLM_API_KEY: 模型 API Key，只能由后端读取。
   - LLM_BASE_URL: OpenAI-compatible API 地址，例如 https://dashscope.aliyuncs.com/compatible-mode/v1。
   - LLM_MODEL: 模型名称，例如 qwen-plus 或供应商当前可用模型。
-  - SSL_CERT_FILE: macOS Python 如出现证书校验失败，可设置为 $(python3 -m certifi)。
+  - SSL_CERT_FILE: 可选证书文件路径。macOS Python 如出现证书校验失败，可设置为 $(python3 -m certifi)；如未设置，后端应优先自动尝试 certifi.where()。
+  - LLM_TIMEOUT_SECONDS: 在线模型请求超时时间，默认 240 秒。
+  - LLM_MAX_SOURCE_CHARS: 在线模型单次请求允许发送的最大原文字数，默认 12000。
+- 本地配置文件:
+  - 后端应支持从项目根目录 `.env` 读取 LLM_PROVIDER、LLM_API_KEY、LLM_BASE_URL、LLM_MODEL、SSL_CERT_FILE、LLM_TIMEOUT_SECONDS、LLM_MAX_SOURCE_CHARS。
+  - `.env` 仅供本地后端读取，必须加入 `.gitignore`，不得提交真实密钥。
 - API Key 安全: API Key 不得写入 index.html、web/js、README 示例真实值、Git 仓库或任何可被浏览器查看的代码。
 - 输入限制: 输入小说文本必须至少包含 3 个章节；不足 3 个章节时直接返回明确错误。
 - 输出限制: 输出必须是合法 YAML，并满足约定的 YAML Schema。
@@ -119,6 +145,8 @@
 - 人物引用: 场景和对白中的 character_id 必须引用 characters 中已定义的人物 id；无法确认的人物应补全或标记为 unknown。
 - 地点引用: 场景 heading.location_id 必须引用 locations 中已定义的地点 id。
 - 章节引用: scenes.source_chapters 必须引用 chapters 中已定义的章节 id。
+- 长文本控制: 长篇输入必须维护 story_bible、foreshadowing_ledger、canon_facts、rhythm_plan 和 coverage_report。
+- 证据引用: 关键事实和关键剧情 beat 应包含 source_refs，指向来源章节和证据文本。
 - 错误处理:
   - 章节不足时返回错误文案：输入章节少于 3 个，无法生成剧本。
   - 章节边界不清晰时，使用语义切分并生成临时章节标题。
@@ -126,10 +154,15 @@
   - action beat 中出现“内心、心想、感到、意识到、觉得、暗暗决定、闪过念头”等不可视听化表达时，触发 Visual Adaptation Rewriter。
   - dialogue beat 中出现“我认为、我觉得、根据目前情况、这说明、因此、我们必须”等说明文式表达时，触发 Dialogue Polisher。
   - 在线模式缺少 LLM_API_KEY 时，返回明确配置错误。
+  - 若未读取到 LLM_API_KEY，错误文案必须明确提示“在启动后端的同一终端 export，或在项目根目录创建 .env”。
   - 在线模型 HTTP 请求失败时，返回模型请求错误，不在前端暴露密钥。
+  - 在线模型读取超时时，返回“在线模型响应超时”错误，并提示减少输入文本或调大 LLM_TIMEOUT_SECONDS。
   - 在线模型返回非 JSON 或缺少 script 根字段时，返回格式错误。
   - 在线模型返回字段漂移时，先进行服务端自动修复，再执行 Schema 校验。
   - 供应商返回 Arrearage / overdue-payment 等错误时，提示账号欠费或账户状态不可用。
+  - 关键章节事件未覆盖时，写入 coverage_report.missing_events，并触发补场或人工确认。
+  - 伏笔 setup 后长期未 payoff 时，写入 coverage_report.unresolved_foreshadowing。
+  - 生成内容与 canon_facts 冲突时，触发 Canon Consistency Checker，并要求改写或人工确认。
   - 场景缺少地点、时间或动作时，触发补全或重写。
   - 剧本内容过短、无法覆盖原章节主要情节时，触发低质量场景重写。
 - 合规要求: {negative_prompt: 内容不得包含任何违法违规、IP 侵权、不利于未成年人的内容；不得主动生成受版权保护作品的长篇仿写或侵权改编内容。}
@@ -165,6 +198,9 @@
     }
 - 本地启动命令:
   - PYTHONPATH=src python3 -m novel2script.server
+- `.env` 启动方式:
+  - cp .env.example .env
+  - 在 `.env` 中填写 LLM_API_KEY 等配置后，执行 PYTHONPATH=src python3 -m novel2script.server
 - 推荐启动命令:
   - LLM_PROVIDER="qwen" LLM_API_KEY="..." LLM_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1" LLM_MODEL="qwen-plus" SSL_CERT_FILE="$(python3 -m certifi)" PYTHONPATH=src python3 -m novel2script.server
 - 默认访问地址:
@@ -183,6 +219,50 @@ script:
     chapter_count: 3
   logline: "一句话故事梗概"
   synopsis: "完整故事摘要"
+  story_bible:
+    premise: "核心故事设定"
+    world_rules:
+      - id: "rule_001"
+        text: "主角前期不会武功"
+        source_chapters:
+          - "chapter_001"
+    character_arcs:
+      - character_id: "char_001"
+        start_state: "胆怯、不会武功"
+        midpoint_state: "开始学习防身"
+        end_state: "具备战斗能力"
+    major_conflicts:
+      - "复仇与自我救赎"
+  foreshadowing_ledger:
+    - id: "foreshadow_001"
+      setup: "信封上的医院印章"
+      source_chapters:
+        - "chapter_002"
+      expected_payoff: "揭示旧案与医院有关"
+      payoff_status: "pending"
+      payoff_scene_id: null
+  canon_facts:
+    - id: "fact_001"
+      subject: "林舟"
+      predicate: "不会"
+      object: "武功"
+      valid_from: "chapter_001"
+      valid_until: "chapter_020"
+      source_text: "林舟从未学过武。"
+  rhythm_plan:
+    acts:
+      - id: "act_001"
+        function: "建立世界、人物和核心悬念"
+        chapters:
+          - "chapter_001"
+          - "chapter_010"
+        intensity: "low_to_mid"
+      - id: "act_002"
+        function: "调查推进，冲突升级"
+        intensity: "mid_to_high"
+      - id: "act_003"
+        function: "真相揭示与情感高潮"
+        intensity: "high"
   characters:
     - id: "char_001"
       name: "人物名称"
@@ -215,12 +295,17 @@ script:
         time_of_day: "night"
         interior_exterior: "interior"
       purpose: "该场景的戏剧功能"
+      plot_function: "setup"
+      intensity: 5
       characters:
         - "char_001"
       beats:
         - type: "action"
           text: "动作描写"
           adaptation_note: "由心理描写外化为可见动作"
+          source_refs:
+            - chapter_id: "chapter_001"
+              evidence: "来源小说中的证据句"
         - type: "dialogue"
           character_id: "char_001"
           text: "对白内容"
@@ -229,6 +314,15 @@ script:
         no_internal_monologue: true
         has_performable_action: true
         has_subtext_dialogue: true
+        canon_consistent: true
+        foreshadowing_tracked: true
+  coverage_report:
+    covered_chapters:
+      - "chapter_001"
+    missing_events: []
+    unresolved_foreshadowing:
+      - "foreshadow_001"
+    contradictions: []
   notes: []
 }
 
@@ -257,6 +351,10 @@ script:
 - 每个 scene 必须至少包含一个 action beat。
 - action beat 不得直接包含不可表演的心理描写；如包含，应自动重写。
 - dialogue beat 不得是说明文式台词；如过于直白，应自动润色为符合角色画像的潜台词表达。
+- 长篇改编必须先输出 story_bible、foreshadowing_ledger、canon_facts、rhythm_plan 和 coverage_report。
+- 关键剧情 beat 应包含 source_refs；无法绑定来源证据时，不能作为既定事实输出。
+- 每个 scene 应包含 plot_function 和 intensity，用于节奏分析。
+- coverage_report.missing_events 和 coverage_report.contradictions 如非空，必须返回给用户或触发修复流程。
 - dialogue、parenthetical、voice_over 类型 beat 如包含 character_id，则必须引用已定义人物。
 - 最终请提供完整代码文件内容、运行方式和最小示例输入。
 }
@@ -412,6 +510,224 @@ characters:
 4. 保留剧情信息，但不要直接说明。
 ```
 
+## 长文本全局控制工作流
+
+长篇小说不应直接从“全文”跳到“剧本场景”。正确流程是先建立可追踪、可校验、可回收的故事控制系统。
+
+```text
+小说全文
+  ↓
+章节切分
+  ↓
+章节级摘要
+  ↓
+卷 / 篇章级摘要
+  ↓
+主线 / 支线 / 人物线提取
+  ↓
+Story Bible 故事圣经
+  ↓
+Foreshadowing Ledger 伏笔账本
+  ↓
+Canon Facts 设定事实表
+  ↓
+Rhythm Plan 全局节奏规划
+  ↓
+分集 / 分幕 / 分场规划
+  ↓
+单场景生成
+  ↓
+Coverage Checker 覆盖率检查
+  ↓
+Canon Consistency Checker 一致性检查
+  ↓
+输出可追溯、少幻觉的剧本 YAML
+```
+
+## Story Bible 故事圣经
+
+故事圣经用于保存长篇小说的全局设定，避免模型只记住当前章节。
+
+```yaml
+story_bible:
+  premise: "核心故事设定"
+  world_rules:
+    - id: "rule_001"
+      text: "主角前期不会武功"
+      source_chapters:
+        - "chapter_003"
+  character_arcs:
+    - character_id: "char_001"
+      start_state: "胆怯、不会武功"
+      midpoint_state: "开始学习防身"
+      end_state: "具备战斗能力"
+  major_conflicts:
+    - "复仇与自我救赎"
+  timeline:
+    - order: 1
+      event: "主角收到第一封信"
+      source_chapter: "chapter_001"
+```
+
+使用规则：
+
+- 每次生成场景前，必须检索相关 story_bible 条目。
+- 人物能力、人物关系、身份揭示、死亡/失踪状态不得违背 story_bible。
+- 如剧情需要改变设定，必须补充过渡事件或标记为人工确认。
+
+## Foreshadowing Ledger 伏笔账本
+
+伏笔账本用于避免长文改编时遗忘 setup 或 payoff。
+
+```yaml
+foreshadowing_ledger:
+  - id: "foreshadow_001"
+    setup: "信封上的医院印章"
+    source_chapters:
+      - "chapter_002"
+    expected_payoff: "揭示旧案与医院有关"
+    payoff_status: "pending"
+    payoff_scene_id: null
+```
+
+检查规则：
+
+- setup 阶段不得过早解释伏笔。
+- payoff 阶段必须能追溯到已有 setup。
+- 删除或改写伏笔时，必须更新 payoff_status。
+- pending 伏笔必须进入 coverage_report.unresolved_foreshadowing。
+
+## Canon Facts 设定事实表
+
+设定事实表用于处理幻觉和前后矛盾。
+
+```yaml
+canon_facts:
+  - id: "fact_001"
+    subject: "林舟"
+    predicate: "不会"
+    object: "武功"
+    valid_from: "chapter_001"
+    valid_until: "chapter_020"
+    source_text: "林舟从未学过武。"
+```
+
+冲突示例：
+
+```yaml
+- type: "action"
+  text: "林舟飞身踢倒三名打手。"
+```
+
+如果当前时间点早于 `valid_until: chapter_020`，则应判定为冲突：
+
+```text
+冲突：林舟在 chapter_020 前不会武功，但当前场景出现高强度战斗能力。
+```
+
+修复方式：
+
+- 改写为逃跑、躲避、使用道具或被别人救下。
+- 补充前置训练场景。
+- 标记为需要人工确认。
+
+## Rhythm Planner 节奏规划器
+
+节奏规划器用于避免长剧情平铺直叙或高潮失控。
+
+```yaml
+rhythm_plan:
+  acts:
+    - id: "act_001"
+      function: "建立世界、人物和核心悬念"
+      chapters:
+        - "chapter_001"
+        - "chapter_010"
+      intensity: "low_to_mid"
+    - id: "act_002"
+      function: "调查推进，冲突升级"
+      intensity: "mid_to_high"
+    - id: "act_003"
+      function: "真相揭示与情感高潮"
+      intensity: "high"
+```
+
+每个场景应标注：
+
+```yaml
+purpose: "回收医院印章伏笔，并推动林舟怀疑旧案真相。"
+plot_function: "payoff"
+intensity: 7
+```
+
+节奏规则：
+
+- 开端阶段优先建立人物、世界和悬念。
+- 中段阶段提高冲突密度，但需要保留呼吸场。
+- 高潮阶段集中回收伏笔和人物弧光。
+- 连续高强度场景不得过密，除非目标格式是短剧高爽点结构。
+
+## Coverage Checker 覆盖率检查
+
+覆盖率检查用于解决“丢三落四”。
+
+```yaml
+coverage_report:
+  covered_chapters:
+    - "chapter_001"
+    - "chapter_002"
+  missing_events:
+    - source_chapter: "chapter_005"
+      event: "林舟第一次发现医院印章"
+      severity: "high"
+  unresolved_foreshadowing:
+    - "foreshadow_001"
+  contradictions:
+    - fact_id: "fact_001"
+      scene_id: "scene_008"
+      description: "主角尚未学武却突然击败三名打手。"
+```
+
+检查项：
+
+- 每章主要事件是否进入剧本。
+- 每个重要人物是否保留。
+- 每个关键地点是否保留。
+- 每个伏笔是否 setup / payoff。
+- 每条人物线是否有起点、变化和结果。
+- 是否存在与 canon_facts 冲突的桥段。
+
+## Source Refs 证据引用
+
+为了降低幻觉，关键剧情必须绑定来源证据。
+
+```yaml
+beats:
+  - type: "action"
+    text: "林舟翻过信封，看见角落里的医院印章。"
+    source_refs:
+      - chapter_id: "chapter_002"
+        evidence: "信纸角落里藏着一个几乎被擦掉的医院印章。"
+```
+
+规则：
+
+- 人物能力、人物关系、死亡、背叛、身份揭示、关键道具必须有 source_refs。
+- 没有来源证据，不允许生成成既定事实。
+- 如果为了剧本改编新增桥段，必须在 notes 中标记为 adaptation_addition。
+
+## 长文本改编原则
+
+```text
+不要让 AI 直接从“长小说”跳到“剧本场景”。
+先建全局记忆，
+再做节奏规划，
+再分场生成，
+最后做覆盖率和一致性校验。
+```
+
+长文本改编的核心不是单纯扩大上下文窗口，而是建立可追踪、可校验、可回收的故事控制系统。
+
 ## 在线 AI 工作流
 
 ```text
@@ -421,7 +737,9 @@ characters:
   ↓
 POST /api/convert
   ↓
-后端读取 LLM_API_KEY / LLM_BASE_URL / LLM_MODEL
+后端读取环境变量或项目根目录 .env
+  ↓
+自动解析 SSL_CERT_FILE；如未设置则尝试 certifi
   ↓
 调用 OpenAI-compatible 国产模型接口
   ↓
@@ -445,12 +763,36 @@ POST /api/convert
 - 用户在一个终端里 export 了 LLM_API_KEY，但 server 是在另一个终端启动的。
 - 用户先启动 server，之后才 export LLM_API_KEY。
 - 用户用 file:// 打开 index.html，导致在线模式无法访问本地后端。
+- 用户在 Codex、终端或其他宿主环境里分别启动服务，导致环境变量没有被同一进程继承。
 
 处理方式：
 
 ```bash
 cd /Users/fenhongxiaozhu/Desktop/Novel2Script
 
+cp .env.example .env
+```
+
+优先推荐在 `.env` 中写入配置：
+
+```text
+LLM_PROVIDER=qwen
+LLM_API_KEY=你的百炼API_KEY
+LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+LLM_MODEL=qwen-plus
+LLM_TIMEOUT_SECONDS=240
+LLM_MAX_SOURCE_CHARS=12000
+```
+
+然后启动：
+
+```bash
+PYTHONPATH=src python3 -m novel2script.server
+```
+
+如需临时用终端环境变量覆盖，也可使用：
+
+```bash
 LLM_PROVIDER="qwen" \
 LLM_API_KEY="你的百炼API_KEY" \
 LLM_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1" \
@@ -497,6 +839,39 @@ export SSL_CERT_FILE="$(python3 -m certifi)"
 ```
 
 之后重启 server。
+
+当前实现要求：
+
+- 后端优先读取 `.env` 或环境变量中的 `SSL_CERT_FILE`。
+- 如未设置 `SSL_CERT_FILE`，后端自动尝试 `certifi.where()`，减少手动配置成本。
+- 若 `SSL_CERT_FILE` 指向不存在的文件，必须返回明确错误，而不是只给出模糊的 500。
+
+### 在线请求超时
+
+如果出现：
+
+```text
+The read operation timed out
+```
+
+说明 HTTPS 连接已建立，但模型响应过慢、请求体过大，或供应商侧延迟过高。
+
+处理方式：
+
+```text
+在 .env 中调整：
+LLM_TIMEOUT_SECONDS=360
+LLM_MAX_SOURCE_CHARS=8000
+```
+
+然后重启 server。
+
+当前实现要求：
+
+- 在线模型请求默认超时应为 240 秒，并允许通过 `LLM_TIMEOUT_SECONDS` 覆盖。
+- 在线模式单次送入模型的原文长度默认限制为 12000 字，并允许通过 `LLM_MAX_SOURCE_CHARS` 覆盖。
+- 若输入超过上限，后端应截断原文，并在 prompt 中显式提示“当前在线请求已截取前段文本用于生成初稿”。
+- 超时异常必须转换为用户可理解的错误文案，而不是只显示通用 500 错误。
 
 ### 模型返回 Schema 漂移
 
