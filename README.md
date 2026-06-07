@@ -3,7 +3,7 @@
 Novel2Script 是一个“小说文本 -> 结构化剧本 YAML”的最小可运行实现。当前版本根据 `docs/technical-design-v0.1.md` 的 Agent Pipeline 设计，用规则引擎完成章节识别、人物/地点提取、场景生成、YAML 组装和 Schema 校验。
 
 ## demo视频链接
-https://www.bilibili.com/video/BV19DE86sE22/?vd_source=e46ce8bd64782b32e2c89bd9f02501e1
+[https://www.bilibili.com/video/BV19DE86sE22/?vd_source=e46ce8bd64782b32e2c89bd9f02501e1](https://www.bilibili.com/video/BV1ZCE86FEeq/?vd_source=e46ce8bd64782b32e2c89bd9f02501e1)
 
 ## 功能
 
